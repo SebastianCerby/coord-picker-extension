@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Coord Picker</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+    :root {
+      --background: #09090b;
+      --foreground: #fafafa;
+      --card: #09090b;
+      --card-foreground: #fafafa;
+      --popover: #09090b;
+      --popover-foreground: #fafafa;
+      --primary: #fafafa;
+      --primary-foreground: #18181b;
+      --secondary: #27272a;
+      --secondary-foreground: #fafafa;
+      --muted: #27272a;
+      --muted-foreground: #a1a1aa;
+      --accent: #27272a;
+      --accent-foreground: #fafafa;
+      --destructive: #7f1d1d;
+      --destructive-foreground: #fafafa;
+      --border: #27272a;
+      --input: #27272a;
+      --ring: #d4d4d8;
+      --radius: 0.5rem;
+      --point-color: #f97316;
+      --point-glow: rgba(249, 115, 22, 0.2);
+      --ok-color: #22c55e;
+      --warn-color: #eab308;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 100vw; height: 100vh;
+      background: var(--background); color: var(--foreground);
+      font-family: var(--sans); font-size: 13px;
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      background: var(--card); flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 8px; }
+    .logo {
+      width: 22px; height: 22px; background: var(--foreground); border-radius: calc(var(--radius) - 2px);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: var(--background);
+    }
+    .app-title { font-weight: 700; font-size: 14px; letter-spacing: -0.3px; }
+    .header-right { display: flex; align-items: center; gap: 6px; }
+
+    .btn {
+      font-family: var(--sans); font-size: 13px; font-weight: 600;
+      padding: 7px 14px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted-foreground); cursor: pointer; transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    }
+    .btn:hover { background: var(--accent); color: var(--accent-foreground); }
+    .btn-accent { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+    .btn-accent:hover { background: rgba(250,250,250,0.9); }
+    .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: calc(var(--radius) - 2px); }
+    .btn-icon {
+      width: 28px; height: 28px; padding: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+
+    .main { display: flex; flex: 1; min-height: 0; }
+
+    .canvas-area {
+      flex: 1; position: relative; overflow: hidden;
+      background: var(--background); cursor: grab;
+    }
+    .canvas-area.dragging { cursor: grabbing; }
+    .canvas-area.dragging #display-img { cursor: grabbing; }
+    .canvas-area.drag-over {
+      outline: 2px dashed var(--ring); outline-offset: -4px;
+      background: rgba(212,212,216,0.05);
+    }
+
+    .empty-state {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; color: var(--muted-foreground); text-align: center; padding: 30px;
+    }
+    .empty-state svg { opacity: 0.3; }
+    .empty-state p { font-size: 12px; line-height: 1.5; }
+    .empty-state .shortcut {
+      font-family: var(--mono); font-size: 10px;
+      background: var(--secondary); padding: 2px 6px;
+      border-radius: 3px; border: 1px solid var(--border);
+    }
+
+    #img-container {
+      position: absolute; top: 0; left: 0;
+      display: none; transform-origin: 0 0;
+    }
+    #display-img {
+      display: block; cursor: crosshair;
+      image-rendering: auto;
+      -webkit-user-drag: none;
+      user-select: none;
+    }
+
+    .point-marker {
+      position: absolute; width: 20px; height: 20px;
+      border-radius: 50%; border: 2px solid var(--point-color);
+      transform: translate(-50%, -50%); pointer-events: none; z-index: 10;
+      box-shadow: 0 0 10px var(--point-glow);
+      transition: opacity 0.15s;
+    }
+    .point-marker::after {
+      content: ''; position: absolute; top: 50%; left: 50%;
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--point-color); transform: translate(-50%, -50%);
+    }
+    .point-label {
+      position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+      font-family: var(--mono); font-size: 9px; font-weight: 600;
+      padding: 2px 6px; border-radius: 3px; white-space: nowrap;
+      background: var(--point-color); color: #000;
+    }
+    .chain-marker {
+      position: absolute; width: 16px; height: 16px;
+      border-radius: 50%; border: 2px solid rgba(249, 115, 22, 0.6);
+      transform: translate(-50%, -50%); pointer-events: none; z-index: 9;
+      box-shadow: 0 0 6px rgba(249, 115, 22, 0.15);
+    }
+    .chain-marker::after {
+      content: ''; position: absolute; top: 50%; left: 50%;
+      width: 3px; height: 3px; border-radius: 50%;
+      background: rgba(249, 115, 22, 0.6); transform: translate(-50%, -50%);
+    }
+    .chain-label {
+      position: absolute; top: -20px; left: 18px;
+      font-family: var(--mono); font-size: 8px; font-weight: 600;
+      padding: 1px 4px; border-radius: 2px; white-space: nowrap;
+      background: rgba(249, 115, 22, 0.5); color: #000;
+    }
+    .chain-number {
+      position: absolute; top: -10px; left: -10px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--point-color); color: #000;
+      font-family: var(--mono); font-size: 9px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1; z-index: 1;
+    }
+    .chain-number.current {
+      background: var(--point-color); box-shadow: 0 0 8px var(--point-glow);
+    }
+
+    .crosshair-h, .crosshair-v {
+      position: absolute; pointer-events: none; z-index: 8;
+    }
+    .crosshair-h {
+      left: 0; right: 0; height: 1px;
+      border-top: 1px dashed rgba(249, 115, 22, 0.3);
+    }
+    .crosshair-v {
+      top: 0; bottom: 0; width: 1px;
+      border-left: 1px dashed rgba(249, 115, 22, 0.3);
+    }
+
+    #cursor-label {
+      position: fixed; pointer-events: none; z-index: 150; display: none;
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      padding: 3px 8px; border-radius: calc(var(--radius) - 2px); white-space: nowrap;
+      letter-spacing: 0.3px; backdrop-filter: blur(6px);
+      background: rgba(250,250,250,0.9); color: var(--background);
+    }
+
+    #zoom-lens {
+      position: fixed; width: 140px; height: 140px;
+      border: 2px solid var(--ring); border-radius: var(--radius);
+      overflow: hidden; pointer-events: none; z-index: 100;
+      display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #zoom-canvas { display: block; }
+    #zoom-crosshair-h, #zoom-crosshair-v {
+      position: absolute; background: rgba(255,255,255,0.4);
+    }
+    #zoom-crosshair-h { width: 100%; height: 1px; top: 50%; left: 0; }
+    #zoom-crosshair-v { width: 1px; height: 100%; left: 50%; top: 0; }
+
+    .sidebar {
+      width: 340px; border-left: 1px solid var(--border);
+      background: var(--card); display: flex;
+      flex-direction: column; overflow-y: auto; flex-shrink: 0;
+    }
+    .panel { border-bottom: 1px solid var(--border); padding: 12px 14px; }
+    .panel-title {
+      font-size: 11px; font-weight: 500; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--muted-foreground); margin-bottom: 10px;
+      border-left: none; padding-left: 0;
+    }
+
+    .res-row {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+    }
+    .res-label { font-size: 11px; color: var(--muted-foreground); }
+    .res-value { font-family: var(--mono); font-size: 11px; color: var(--foreground); }
+
+    .sm-input {
+      font-family: var(--mono); font-size: 12px;
+      background: var(--background); border: 1px solid var(--input);
+      color: var(--foreground); padding: 6px 8px; border-radius: calc(var(--radius) - 2px);
+      width: 60px; text-align: center; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .sm-input:focus { border-color: var(--ring); box-shadow: 0 0 0 2px rgba(212,212,216,0.15); }
+
+    .res-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 3px 8px; border-radius: 4px; border: 1px solid;
+    }
+    .res-badge.match {
+      background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.2); color: var(--ok-color);
+    }
+    .res-badge.scaled {
+      background: rgba(234,179,8,0.1); border-color: rgba(234,179,8,0.2); color: var(--warn-color);
+    }
+    .res-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .coord-block {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px; text-align: center;
+    }
+    .coord-big {
+      font-family: var(--mono); font-size: 22px; font-weight: 700;
+      color: var(--point-color); letter-spacing: 1px; line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+    }
+    .coord-big.empty { font-size: 13px; color: var(--muted-foreground); font-weight: 500; }
+    .coord-sub {
+      font-family: var(--mono); font-size: 10px; color: var(--muted-foreground); margin-top: 4px;
+    }
+
+    .code-block {
+      background: var(--background); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 12px;
+      font-family: var(--mono); font-size: 12px; line-height: 1.6;
+      color: var(--muted-foreground); white-space: pre-wrap; word-break: break-all;
+      max-height: 120px; overflow-y: auto;
+    }
+    .code-block .kw { color: #c084fc; }
+    .code-block .fn { color: #93c5fd; }
+    .code-block .num { color: #fbbf24; }
+    .code-block .str { color: #6ee7b7; }
+    .code-block .cmt { color: var(--muted-foreground); }
+
+    .copy-row { display: flex; gap: 4px; margin-top: 6px; }
+    .copy-row .btn { flex: 1; justify-content: center; }
+
+    .history-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 6px; border-radius: calc(var(--radius) - 2px); cursor: pointer;
+      font-family: var(--mono); font-size: 10px;
+      color: var(--muted-foreground); transition: background 0.1s;
+    }
+    .history-item:hover { background: var(--accent); }
+    .history-item .h-coords { color: var(--point-color); font-weight: 600; }
+    .history-empty {
+      font-size: 10px; color: var(--muted-foreground); text-align: center; padding: 8px 0;
+    }
+
+    .statusbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 12px; border-top: 1px solid var(--border);
+      background: var(--card); font-family: var(--mono);
+      font-size: 10px; color: var(--muted-foreground); flex-shrink: 0;
+    }
+    .statusbar-left, .statusbar-right { display: flex; align-items: center; gap: 10px; }
+    .zoom-controls { display: flex; align-items: center; gap: 4px; }
+    .zoom-controls span {
+      font-family: var(--mono); font-size: 10px; min-width: 32px;
+      text-align: center; color: var(--muted-foreground);
+    }
+
+    .toast {
+      position: fixed; bottom: 34px; left: 50%;
+      transform: translateX(-50%) translateY(100%);
+      background: var(--foreground); color: var(--background); padding: 6px 14px;
+      border-radius: var(--radius); font-size: 11px; font-weight: 500;
+      opacity: 0; transition: all 0.25s; z-index: 200; pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #file-input { display: none; }
+    .btn-active { background: var(--point-color) !important; color: #000 !important; border-color: var(--point-color) !important; }
+
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">⊹</div>
+      <span class="app-title">Coord Picker</span>
+    </div>
+    <div class="header-right">
+      <button class="btn" id="btn-load">📂 Load</button>
+      <button class="btn" id="btn-paste">📋 Paste</button>
+      <button class="btn btn-sm" id="btn-chain">⛓ Chain</button>
+      <button class="btn btn-sm" id="btn-clear">🗑 Clear</button>
+    </div>
+  </div>
+  <input type="file" id="file-input" accept="image/*">
+
+  <div class="main">
+    <div class="canvas-area" id="canvas-area">
+      <div class="empty-state" id="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="m21 15-5-5L5 21"/>
+        </svg>
+        <p>Drop your error screenshot here<br>or <strong>Load</strong> / <span class="shortcut">Ctrl+V</span></p>
+      </div>
+      <div id="img-container">
+        <img id="display-img">
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel">
+        <div class="panel-title">Resolution</div>
+        <div class="res-row">
+          <span class="res-label">Image</span>
+          <span class="res-value" id="img-res">—</span>
+        </div>
+        <div class="res-row">
+          <span class="res-label">Status</span>
+          <span class="res-badge match" id="res-status">
+            <span class="dot"></span> No image
+          </span>
+        </div>
+        <div class="res-row" style="margin-bottom:0">
+          <span class="res-label">Chrome bar (px)</span>
+          <input class="sm-input" id="chrome-height" type="number" min="0" max="500" value="148" title="Height in pixels of the browser toolbar area in the screenshot. Subtracted from Y coordinates automatically.">
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Picked Coordinate</div>
+        <div class="coord-block">
+          <div class="coord-big empty" id="coord-display">Click on image</div>
+          <div class="coord-sub" id="coord-raw"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="flex:1;display:flex;flex-direction:column;">
+        <div class="panel-title">Code Output</div>
+        <div class="code-block" id="code-output"><span class="cmt">// Click on the screenshot to
+// generate the code snippet.</span></div>
+        <div class="copy-row">
+          <button class="btn btn-sm" id="btn-copy-coords">Copy x, y</button>
+          <button class="btn btn-sm btn-accent" id="btn-copy-code">Copy Code</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">History</div>
+        <div id="history-list">
+          <div class="history-empty">No picks yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <div class="statusbar-left">
+      <span id="status-img">No image</span>
+      <span id="status-cursor">—</span>
+    </div>
+    <div class="statusbar-right">
+      <div class="zoom-controls">
+        <button class="btn btn-icon btn-sm" id="btn-zoom-out">−</button>
+        <span id="zoom-level">100%</span>
+        <button class="btn btn-icon btn-sm" id="btn-zoom-in">+</button>
+        <button class="btn btn-sm" id="btn-zoom-fit">Fit</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cursor-label">0, 0</div>
+  <div id="zoom-lens">
+    <canvas id="zoom-canvas" width="140" height="140"></canvas>
+    <div id="zoom-crosshair-h"></div>
+    <div id="zoom-crosshair-v"></div>
+  </div>
+  <!-- Hidden canvas only for zoom lens drawing -->
+  <canvas id="src-canvas" style="display:none"></canvas>
+  <div class="toast" id="toast"></div>
+
+<script src="popup.js"></script>
+</body>
+</html>
